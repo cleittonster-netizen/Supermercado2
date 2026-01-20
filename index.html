@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Supermercado – Versão Estável</title>
+
+<style>
+body{font-family:Arial;background:#f4f4f4;padding:20px}
+.container{max-width:900px;margin:auto;background:#fff;padding:20px;border-radius:8px;margin-bottom:20px}
+h1,h2,h3{text-align:center}
+input,select,textarea,button{width:100%;padding:8px;margin:6px 0}
+button{background:#27ae60;color:#fff;border:none;border-radius:5px;cursor:pointer}
+button.secondary{background:#2980b9}
+button.danger{background:#c0392b}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0}
+.box{border:1px solid #ddd;padding:8px;border-radius:5px;width:100%}
+.hidden{display:none}
+.smallBtn{width:auto;padding:6px 12px}
+hr{margin:15px 0}
+</style>
+</head>
+
+<body>
+
+<h1>🛒 Supermercado</h1>
+
+<!-- LOGIN -->
+<div class="container" id="loginBox">
+<h2>Login</h2>
+<input id="loginUser" placeholder="Usuário">
+<input id="loginPass" placeholder="Senha" type="password">
+<button onclick="login()">Entrar</button>
+<p><a href="#" onclick="showCadastro()">Criar conta</a></p>
+<p style="text-align:center;font-size:12px;color:#555;">
+Admin Superior padrão: <b>master</b> / <b>1234</b>
+</p>
+</div>
+
+<!-- CADASTRO -->
+<div class="container hidden" id="cadastroBox">
+<h2>Cadastro (Somente Cliente)</h2>
+<input id="cadUser" placeholder="Usuário">
+<input id="cadPass" placeholder="Senha" type="password">
+<input id="cadEmail" placeholder="E-mail">
+<input id="cadTelefone" placeholder="Telefone">
+<textarea id="cadEndereco" placeholder="Endereço"></textarea>
+
+<!-- removido tipo admin do público -->
+<p style="text-align:center;font-size:12px;color:#555;">
+O cadastro público cria apenas conta de <b>Cliente</b>.
+</p>
+
+<button onclick="cadastrar()">Cadastrar</button>
+<button class="secondary" onclick="voltarLogin()">Voltar</button>
+</div>
+
+<!-- ADMIN -->
+<div class="container hidden" id="adminBox">
+<h2>Administrador</h2>
+
+<div id="infoAdmin" class="box"></div>
+
+<hr>
+
+<h3>📌 Cadastrar novo Administrador</h3>
+<div id="adminSuperiorArea" class="hidden">
+  <input id="novoAdminUser" placeholder="Usuário do novo admin">
+  <input id="novoAdminPass" placeholder="Senha do novo admin" type="password">
+  <button class="secondary" onclick="cadastrarAdmin()">Cadastrar Administrador</button>
+
+  <h3>Administradores cadastrados</h3>
+  <div id="listaAdmins"></div>
+</div>
+
+<div id="msgSemPermissao" class="hidden">
+  <p style="text-align:center;color:#c0392b;">
+    Você é admin normal. Apenas o <b>Admin Superior</b> pode cadastrar outros administradores.
+  </p>
+</div>
+
+<hr>
+
+<h3>📦 Produtos</h3>
+<input id="prodNome" placeholder="Nome do produto">
+<input id="prodPreco" type="number" step="0.01" placeholder="Preço">
+<input id="prodQtd" type="number" placeholder="Stock">
+<button onclick="addProduto()">Adicionar produto</button>
+
+<h3>Produtos cadastrados</h3>
+<div id="listaAdmin"></div>
+
+<button class="danger" onclick="logout()">Sair</button>
+</div>
+
+<!-- CLIENTE -->
+<div class="container hidden" id="clienteBox">
+<h2>Produtos</h2>
+<div id="listaCliente"></div>
+
+<h3>Carrinho</h3>
+<div id="carrinho"></div>
+<p>Total: R$ <span id="total">0.00</span></p>
+
+<button class="secondary" onclick="encerrarCompra()">✅ Encerrar compra</button>
+<button class="danger" onclick="logout()">Sair</button>
+</div>
+
+<script>
+// ===================== INIT =====================
+if(!localStorage.getItem("users")) localStorage.setItem("users","[]");
+if(!localStorage.getItem("produtos")) localStorage.setItem("produtos","[]");
+
+// cria admin superior automático
+function garantirAdminSuperior(){
+ const users = JSON.parse(localStorage.getItem("users"));
+
+ const existeMaster = users.some(u => u.tipo === "admin_master");
+ if(!existeMaster){
+  users.push({
+   user: "master",
+   pass: "1234",
+   email: "master@admin.com",
+   telefone: "-",
+   endereco: "-",
+   tipo: "admin_master"
+  });
+  localStorage.setItem("users", JSON.stringify(users));
+ }
+}
+garantirAdminSuperior();
+
+// guarda usuário logado
+let usuarioLogado = null;
+
+// ===================== LOGIN =====================
+function login(){
+ const user = document.getElementById("loginUser").value.trim();
+ const pass = document.getElementById("loginPass").value.trim();
+
+ const users = JSON.parse(localStorage.getItem("users"));
+ const u = users.find(x => x.user === user && x.pass === pass);
+
+ if(!u) return alert("Usuário ou senha incorretos");
+
+ usuarioLogado = u;
+
+ document.getElementById("loginBox").classList.add("hidden");
+
+ // admin normal ou superior
+ if(u.tipo === "admin" || u.tipo === "admin_master"){
+  adminBox.classList.remove("hidden");
+  renderAdmin();
+ } else {
+  clienteBox.classList.remove("hidden");
+  renderCliente();
+  atualizarCarrinho();
+ }
+}
+
+// ===================== CADASTRO PÚBLICO (SÓ CLIENTE) =====================
+function cadastrar(){
+ const user = document.getElementById("cadUser").value.trim();
+ const pass = document.getElementById("cadPass").value.trim();
+ const email = document.getElementById("cadEmail").value.trim();
+ const telefone = document.getElementById("cadTelefone").value.trim();
+ const endereco = document.getElementById("cadEndereco").value.trim();
+
+ if(!user || !pass || !email || !telefone || !endereco){
+  alert("Preencha todos os campos");
+  return;
+ }
+
+ const users = JSON.parse(localStorage.getItem("users"));
+ if(users.some(u => u.user === user)){
+  alert("Usuário já existe");
+  return;
+ }
+
+ users.push({ user, pass, email, telefone, endereco, tipo: "cliente" });
+ localStorage.setItem("users", JSON.stringify(users));
+
+ alert("Cadastro realizado (Cliente)!");
+ voltarLogin();
+}
+
+// ===================== ADMIN SUPERIOR: CADASTRAR ADMIN =====================
+function cadastrarAdmin(){
+ if(!usuarioLogado || usuarioLogado.tipo !== "admin_master"){
+  return; // sem mensagem
+ }
+
+ const user = document.getElementById("novoAdminUser").value.trim();
+ const pass = document.getElementById("novoAdminPass").value.trim();
+
+ if(!user || !pass){
+  alert("Preencha usuário e senha do novo admin");
+  return;
+ }
+
+ const users = JSON.parse(localStorage.getItem("users"));
+ if(users.some(u => u.user === user)){
+  alert("Esse usuário já existe");
+  return;
+ }
+
+ users.push({
+  user,
+  pass,
+  email: "-",
+  telefone: "-",
+  endereco: "-",
+  tipo: "admin"
+ });
+
+ localStorage.setItem("users", JSON.stringify(users));
+
+ document.getElementById("novoAdminUser").value = "";
+ document.getElementById("novoAdminPass").value = "";
+
+ renderAdmins();
+}
+
+// listar admins
+function renderAdmins(){
+ const div = document.getElementById("listaAdmins");
+ div.innerHTML = "";
+
+ const users = JSON.parse(localStorage.getItem("users"));
+ const admins = users.filter(u => u.tipo === "admin" || u.tipo === "admin_master");
+
+ admins.forEach((a, idx)=>{
+  const podeExcluir = a.tipo !== "admin_master"; // não pode deletar master
+  div.innerHTML += `
+   <div class="box row">
+     <div>
+       <b>${a.user}</b> (${a.tipo === "admin_master" ? "Admin Superior" : "Admin"})
+     </div>
+     ${
+       podeExcluir
+       ? `<button class="danger smallBtn" onclick="deletarAdmin('${a.user}')">🗑</button>`
+       : `<button class="smallBtn" disabled style="opacity:.5;cursor:not-allowed;">🔒</button>`
+     }
+   </div>
+  `;
+ });
+}
+
+function deletarAdmin(userName){
+ if(!usuarioLogado || usuarioLogado.tipo !== "admin_master") return;
+
+ if(!confirm("Deseja deletar esse administrador?")) return;
+
+ const users = JSON.parse(localStorage.getItem("users"));
+ const novo = users.filter(u => u.user !== userName);
+ localStorage.setItem("users", JSON.stringify(novo));
+
+ renderAdmins();
+}
+
+// ===================== PRODUTOS (ADMIN) =====================
+function addProduto(){
+ const nome = document.getElementById("prodNome").value.trim();
+ const preco = Number(document.getElementById("prodPreco").value);
+ const qtd = Number(document.getElementById("prodQtd").value);
+
+ if(!nome || preco <= 0 || qtd <= 0){
+  alert("Preencha corretamente o produto");
+  return;
+ }
+
+ const produtos = JSON.parse(localStorage.getItem("produtos"));
+ produtos.push({ nome, preco, qtd });
+ localStorage.setItem("produtos", JSON.stringify(produtos));
+
+ document.getElementById("prodNome").value = "";
+ document.getElementById("prodPreco").value = "";
+ document.getElementById("prodQtd").value = "";
+
+ renderAdmin();
+}
+
+function renderAdmin(){
+ // mostra info do usuário logado
+ const info = document.getElementById("infoAdmin");
+ info.innerHTML = `
+  <b>Usuário:</b> ${usuarioLogado.user}<br>
+  <b>Nível:</b> ${usuarioLogado.tipo === "admin_master" ? "Admin Superior" : "Admin Normal"}
+ `;
+
+ // área exclusiva do master
+ if(usuarioLogado.tipo === "admin_master"){
+  document.getElementById("adminSuperiorArea").classList.remove("hidden");
+  document.getElementById("msgSemPermissao").classList.add("hidden");
+  renderAdmins();
+ } else {
+  document.getElementById("adminSuperiorArea").classList.add("hidden");
+  document.getElementById("msgSemPermissao").classList.remove("hidden");
+ }
+
+ const lista = document.getElementById("listaAdmin");
+ lista.innerHTML = "";
+
+ const produtos = JSON.parse(localStorage.getItem("produtos"));
+ if(produtos.length === 0){
+  lista.innerHTML = "<p style='text-align:center'>Nenhum produto cadastrado.</p>";
+  return;
+ }
+
+ produtos.forEach((p,i)=>{
+  lista.innerHTML += `
+   <div class="box row">
+    <div>${p.nome} - R$ ${Number(p.preco).toFixed(2)} (Stock ${p.qtd})</div>
+    <button class="danger smallBtn" onclick="delProd(${i})">🗑</button>
+   </div>`;
+ });
+}
+
+function delProd(i){
+ const produtos = JSON.parse(localStorage.getItem("produtos"));
+ produtos.splice(i,1);
+ localStorage.setItem("produtos", JSON.stringify(produtos));
+
+ renderAdmin();
+ renderCliente();
+}
+
+// ===================== CLIENTE =====================
+let carrinho = {}; // { indexProduto: { nome, preco, qtd } }
+let total = 0;
+
+function renderCliente(){
+ const lista = document.getElementById("listaCliente");
+ lista.innerHTML = "";
+
+ const produtos = JSON.parse(localStorage.getItem("produtos"));
+
+ if(produtos.length === 0){
+  lista.innerHTML = "<p style='text-align:center'>Nenhum produto disponível.</p>";
+  return;
+ }
+
+ produtos.forEach((p,i)=>{
+  if(p.qtd > 0){
+   lista.innerHTML += `
+    <div class="box row">
+     <div>${p.nome} - R$ ${Number(p.preco).toFixed(2)} (Stock ${p.qtd})</div>
+     <button class="smallBtn" onclick="addCarrinho(${i})">+</button>
+    </div>`;
+  }
+ });
+}
+
+function addCarrinho(i){
+ const produtos = JSON.parse(localStorage.getItem("produtos"));
+ if(!produtos[i] || produtos[i].qtd <= 0) return;
+
+ produtos[i].qtd--;
+ localStorage.setItem("produtos", JSON.stringify(produtos));
+
+ if(!carrinho[i]){
+  carrinho[i] = { nome: produtos[i].nome, preco: produtos[i].preco, qtd: 0 };
+ }
+ carrinho[i].qtd++;
+
+ atualizarCarrinho();
+ renderCliente();
+}
+
+function removerCarrinho(i){
+ const produtos = JSON.parse(localStorage.getItem("produtos"));
+ if(!carrinho[i]) return;
+
+ if(produtos[i]) produtos[i].qtd++;
+
+ carrinho[i].qtd--;
+ if(carrinho[i].qtd <= 0) delete carrinho[i];
+
+ localStorage.setItem("produtos", JSON.stringify(produtos));
+
+ atualizarCarrinho();
+ renderCliente();
+}
+
+function atualizarCarrinho(){
+ const carrinhoDiv = document.getElementById("carrinho");
+ const totalSpan = document.getElementById("total");
+
+ carrinhoDiv.innerHTML = "";
+ total = 0;
+
+ const itens = Object.entries(carrinho);
+
+ if(itens.length === 0){
+  carrinhoDiv.innerHTML = "<p style='text-align:center'>Carrinho vazio.</p>";
+  totalSpan.innerText = "0.00";
+  return;
+ }
+
+ itens.forEach(([i,p])=>{
+  total += p.qtd * p.preco;
+
+  carrinhoDiv.innerHTML += `
+   <div class="box row">
+    <div>${p.nome} (${p.qtd}) - R$ ${(p.preco * p.qtd).toFixed(2)}</div>
+    <button class="danger smallBtn" onclick="removerCarrinho(${i})">🗑 Remover</button>
+   </div>`;
+ });
+
+ totalSpan.innerText = total.toFixed(2);
+}
+
+function encerrarCompra(){
+ if(!Object.keys(carrinho).length){
+  alert("Carrinho vazio!");
+  return;
+ }
+
+ alert("✅ Compra encerrada! Total: R$ " + total.toFixed(2));
+
+ carrinho = {};
+ atualizarCarrinho();
+}
+
+// ===================== NAV =====================
+function showCadastro(){
+ document.getElementById("loginBox").classList.add("hidden");
+ document.getElementById("cadastroBox").classList.remove("hidden");
+}
+function voltarLogin(){
+ document.getElementById("cadastroBox").classList.add("hidden");
+ document.getElementById("loginBox").classList.remove("hidden");
+}
+function logout(){
+ location.reload();
+}
+</script>
+
+</body>
+</html>
